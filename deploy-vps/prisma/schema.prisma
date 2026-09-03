@@ -1,0 +1,243 @@
+// Prisma schema for CateringApp - White-label Multi-Tenant Catering Management System
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  SUPER_ADMIN
+  OWNER
+  STAFF
+}
+
+enum OrderStatus {
+  NEW          // Baru
+  CONFIRMED    // Dikonfirmasi
+  IN_PROGRESS  // Diproses
+  READY        // Siap
+  DELIVERED    // Dikirim
+  COMPLETED    // Selesai
+  CANCELLED    // Dibatalkan
+}
+
+enum PaymentStatus {
+  UNPAID       // Belum Bayar
+  DP           // DP (Uang Muka)
+  PAID         // Lunas
+}
+
+enum ProductionStatus {
+  PENDING      // Belum Diproduksi
+  IN_PROGRESS  // Diproses
+  COMPLETED    // Selesai
+}
+
+enum DeliveryStatus {
+  PENDING      // Menunggu
+  ON_THE_WAY   // Dalam Perjalanan
+  DELIVERED    // Sampai / Selesai
+}
+
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  logo        String?
+  description String?
+  whatsapp    String
+  address     String?
+  bankInfo    String?  // Rekening pembayaran (e.g. BCA 12345678 a/n Bu Siti)
+  colorTheme  String?  @default("#10B981") // HEX Primary Color
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users       User[]
+  customers   Customer[]
+  menus       Menu[]
+  orders      Order[]
+  payments    Payment[]
+  ingredients Ingredient[]
+  recipes     Recipe[]
+  productions Production[]
+  deliveries  Delivery[]
+
+  @@map("tenants")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  tenantId  String?  // Nullable for Super Admin
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email     String   @unique
+  password  String   // Hashed with bcrypt
+  name      String
+  role      Role     @default(OWNER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Customer {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  whatsapp  String
+  address   String
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders    Order[]
+
+  @@unique([tenantId, whatsapp])
+  @@map("customers")
+}
+
+model Menu {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  price       Float
+  category    String   @default("Nasi Box") // e.g. Nasi Box, Snack Box, Prasmanan, Hajatan
+  imageUrl    String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  orderItems  OrderItem[]
+  recipes     Recipe[]
+
+  @@map("menus")
+}
+
+model Order {
+  id               String        @id @default(uuid())
+  tenantId         String
+  tenant           Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customerId       String?
+  customer         Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  orderNumber      String        @unique
+  eventDate        DateTime      // Tanggal acara
+  deliveryTime     String        // e.g. "11:30"
+  deliveryAddress  String
+  customerName     String
+  customerWhatsapp String
+  notes            String?
+  totalAmount      Float
+  dpAmount         Float         @default(0)
+  remainingAmount  Float         @default(0)
+  paymentStatus    PaymentStatus @default(UNPAID)
+  orderStatus      OrderStatus   @default(NEW)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  items            OrderItem[]
+  payments         Payment[]
+  delivery         Delivery?
+
+  @@index([tenantId, eventDate])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuId    String?
+  menu      Menu?   @relation(fields: [menuId], references: [id], onDelete: SetNull)
+  menuName  String
+  quantity  Int
+  unitPrice Float
+  subtotal  Float
+  notes     String?
+
+  @@map("order_items")
+}
+
+model Payment {
+  id               String   @id @default(uuid())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderId          String
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount           Float
+  paymentType      String   // DP, PELUNASAN, ANGSURAN
+  paymentMethod    String   // Transfer Bank, Tunai, QRIS
+  paymentProofUrl  String?
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  @@map("payments")
+}
+
+model Ingredient {
+  id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  unit         String   // gram, kg, butir, potong, liter, ikat
+  stock        Float    @default(0)
+  minimumStock Float    @default(0)
+  costPerUnit  Float    @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  recipes      Recipe[]
+
+  @@map("ingredients")
+}
+
+model Recipe {
+  id             String     @id @default(uuid())
+  tenantId       String
+  tenant         Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  menuId         String
+  menu           Menu       @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  ingredientId   String
+  ingredient     Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  quantityNeeded Float      // Takaran per 1 porsi menu
+
+  @@unique([menuId, ingredientId])
+  @@map("recipes")
+}
+
+model Production {
+  id         String           @id @default(uuid())
+  tenantId   String
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  date       DateTime         // Tanggal produksi
+  status     ProductionStatus @default(PENDING)
+  totalBoxes Int              @default(0)
+  notes      String?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  @@unique([tenantId, date])
+  @@map("productions")
+}
+
+model Delivery {
+  id           String         @id @default(uuid())
+  tenantId     String
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orderId      String         @unique
+  order        Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  driverName   String?
+  driverPhone  String?
+  status       DeliveryStatus @default(PENDING)
+  deliveryTime String?
+  notes        String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@map("deliveries")
+}

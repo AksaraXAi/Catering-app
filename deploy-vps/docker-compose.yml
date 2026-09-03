@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # 1. PostgreSQL Database Service
+  db:
+    image: postgres:16-alpine
+    container_name: cateringapp_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+      POSTGRES_DB: ${POSTGRES_DB:-catering_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-catering_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. CateringApp Full-Stack Application (Node.js + Express + React)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cateringapp_web
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgrespassword}@db:5432/${POSTGRES_DB:-catering_db}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-supersecret_jwt_key_change_in_production_cateringapp_2026}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+    volumes:
+      - uploads_data:/app/uploads
+    command: >
+      sh -c "npx prisma migrate deploy &&
+             npx tsx prisma/seed.ts &&
+             node dist/server.cjs"
+
+  # 3. Nginx Reverse Proxy (Optional, for Domain & SSL)
+  nginx:
+    image: nginx:alpine
+    container_name: cateringapp_nginx
+    restart: always
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      # - "443:443" # Uncomment if SSL configured
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - uploads_data:/app/uploads:ro
+
+volumes:
+  postgres_data:
+    driver: local
+  uploads_data:
+    driver: local

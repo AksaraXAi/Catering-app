@@ -1,0 +1,6 @@
+{
+  "name": "CateringApp",
+  "description": "Aplikasi web white-label multi-tenant untuk manajemen usaha catering, pesanan pelanggan, produksi, bahan baku, pengiriman, dan laporan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
